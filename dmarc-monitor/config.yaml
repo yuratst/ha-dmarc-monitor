@@ -9,8 +9,8 @@ arch:
   - aarch64
 
 options:
-  imap_host: imap.strato.com
-  imap_user: dmarc@tsutsylivskyy.nl
+  imap_host: ""
+  imap_user: ""
   imap_password: ""
 
 schema:

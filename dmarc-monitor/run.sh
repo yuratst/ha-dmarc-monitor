@@ -85,15 +85,15 @@ else:
 
 secrets = read_secrets(SECRETS_FILE)
 
-imap_host = resolve_option(options.get("imap_host", "imap.strato.com"), secrets)
-imap_user = resolve_option(options.get("imap_user", "dmarc@tsutsylivskyy.nl"), secrets)
+imap_host = resolve_option(options.get("imap_host", ""), secrets)
+imap_user = resolve_option(options.get("imap_user", ""), secrets)
 imap_password = resolve_option(options.get("imap_password", ""), secrets)
 
 # Fallback secret names (when option is empty)
 if not imap_host:
-    imap_host = secrets.get("strato_imap_host", "imap.strato.com")
+    imap_host = secrets.get("strato_imap_host", "")
 if not imap_user:
-    imap_user = secrets.get("dmarc_imap_user", "dmarc@tsutsylivskyy.nl")
+    imap_user = secrets.get("dmarc_imap_user", "")
 if not imap_password:
     imap_password = secrets.get("dmarc_imap_password", "")
 
@@ -184,8 +184,8 @@ ip_counter = Counter()
 errors = []
 new_uids = set(processed_uids)
 
-if not imap_password:
-    errors.append("imap_password is empty (set add-on option or !secret)")
+if not imap_host or not imap_user or not imap_password:
+    errors.append("imap credentials are missing (set add-on options or !secret values)")
 else:
     try:
         with IMAPClient(imap_host, ssl=True) as client:
