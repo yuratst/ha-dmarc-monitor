@@ -4,11 +4,33 @@ This add-on reads DMARC aggregate reports from an IMAP mailbox, parses reports w
 
 - `/config/dmarc/summary.json`
 
-## Options
+## Add-on options
 
 - `imap_host` (default: `imap.strato.com`)
 - `imap_user` (default: `dmarc@tsutsylivskyy.nl`)
 - `imap_password` (required)
+
+Passwords are **not** stored in this repository.
+
+## Use Home Assistant secrets.yaml
+
+You can reference Home Assistant secrets from add-on options with `!secret` values.
+
+Example `/config/secrets.yaml`:
+
+```yaml
+dmarc_imap_user: dmarc@tsutsylivskyy.nl
+dmarc_imap_password: YOUR_PASSWORD
+strato_imap_host: imap.strato.com
+```
+
+Example add-on options:
+
+```yaml
+imap_host: "!secret strato_imap_host"
+imap_user: "!secret dmarc_imap_user"
+imap_password: "!secret dmarc_imap_password"
+```
 
 ## Output JSON keys
 

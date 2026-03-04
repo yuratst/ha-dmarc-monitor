@@ -2,6 +2,7 @@
 set -euo pipefail
 
 OPTIONS_FILE="/data/options.json"
+SECRETS_FILE="/config/secrets.yaml"
 OUT_DIR="/config/dmarc"
 RAW_DIR="$OUT_DIR/raw"
 PROCESSED_DIR="$OUT_DIR/processed"
@@ -17,7 +18,6 @@ import gzip
 import hashlib
 import io
 import json
-import os
 import zipfile
 from collections import Counter
 from datetime import datetime, timezone
@@ -29,6 +29,7 @@ from imapclient import IMAPClient
 from parsedmarc import parse_report_file
 
 OPTIONS_FILE = Path("/data/options.json")
+SECRETS_FILE = Path("/config/secrets.yaml")
 OUT_DIR = Path("/config/dmarc")
 RAW_DIR = OUT_DIR / "raw"
 PROCESSED_DIR = OUT_DIR / "processed"
@@ -39,14 +40,62 @@ DOMAIN = "tsutsylivskyy.nl"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
+
+def read_secrets(path: Path) -> dict:
+    data = {}
+    if not path.exists():
+        return data
+
+    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        data[key] = value
+
+    return data
+
+
+def resolve_option(value, secrets: dict) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        return str(value)
+
+    cleaned = value.strip()
+    if cleaned.startswith("!secret "):
+        secret_key = cleaned.split(" ", 1)[1].strip()
+        return str(secrets.get(secret_key, "")).strip()
+
+    return cleaned
+
+
 if OPTIONS_FILE.exists():
     options = json.loads(OPTIONS_FILE.read_text(encoding="utf-8"))
 else:
     options = {}
 
-imap_host = options.get("imap_host", "imap.strato.com")
-imap_user = options.get("imap_user", "dmarc@tsutsylivskyy.nl")
-imap_password = options.get("imap_password", "")
+secrets = read_secrets(SECRETS_FILE)
+
+imap_host = resolve_option(options.get("imap_host", "imap.strato.com"), secrets)
+imap_user = resolve_option(options.get("imap_user", "dmarc@tsutsylivskyy.nl"), secrets)
+imap_password = resolve_option(options.get("imap_password", ""), secrets)
+
+# Fallback secret names (when option is empty)
+if not imap_host:
+    imap_host = secrets.get("strato_imap_host", "imap.strato.com")
+if not imap_user:
+    imap_user = secrets.get("dmarc_imap_user", "dmarc@tsutsylivskyy.nl")
+if not imap_password:
+    imap_password = secrets.get("dmarc_imap_password", "")
 
 processed_uids = set()
 if UID_DB.exists():
@@ -136,7 +185,7 @@ errors = []
 new_uids = set(processed_uids)
 
 if not imap_password:
-    errors.append("imap_password is empty")
+    errors.append("imap_password is empty (set add-on option or !secret)")
 else:
     try:
         with IMAPClient(imap_host, ssl=True) as client:
