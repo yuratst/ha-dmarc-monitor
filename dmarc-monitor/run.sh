@@ -10,6 +10,7 @@ DOMAIN="tsutsylivskyy.nl"
 SLEEP_SECONDS=1800
 
 mkdir -p "$OUT_DIR"
+echo "[dmarc-monitor] Version 1.0.1"
 echo "[dmarc-monitor] Service started"
 
 log() {
