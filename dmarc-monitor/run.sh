@@ -10,6 +10,7 @@ DOMAIN="tsutsylivskyy.nl"
 SLEEP_SECONDS=1800
 
 mkdir -p "$OUT_DIR"
+echo "[dmarc-monitor] Service started"
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] [dmarc-monitor] $*"

@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir \
     python-dateutil
 
 COPY run.sh /run.sh
+COPY rootfs /
 RUN chmod +x /run.sh && mkdir -p /config/dmarc
 
 VOLUME ["/config/dmarc"]
