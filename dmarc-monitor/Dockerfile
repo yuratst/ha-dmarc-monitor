@@ -17,9 +17,8 @@ RUN pip install --no-cache-dir \
     lxml \
     python-dateutil
 
-WORKDIR /app
-COPY run.sh /app/run.sh
-RUN chmod +x /app/run.sh && mkdir -p /config/dmarc
+COPY run.sh /run.sh
+RUN chmod +x /run.sh && mkdir -p /config/dmarc
 
 VOLUME ["/config/dmarc"]
-CMD ["/app/run.sh"]
+ENTRYPOINT ["/run.sh"]
