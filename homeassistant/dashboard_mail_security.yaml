@@ -1,0 +1,98 @@
+title: Mail Security
+views:
+  - title: Mail Security
+    path: mail-security
+    icon: mdi:shield-lock
+    cards:
+      - type: entities
+        title: DMARC reports
+        entities:
+          - entity: sensor.reports_total
+            name: Reports total
+          - entity: sensor.total_messages
+            name: Total messages
+
+      - type: gauge
+        name: SPF pass rate
+        entity: sensor.spf_pass_rate
+        min: 0
+        max: 100
+        severity:
+          green: 95
+          yellow: 80
+          red: 0
+
+      - type: gauge
+        name: DKIM pass rate
+        entity: sensor.dkim_pass_rate
+        min: 0
+        max: 100
+        severity:
+          green: 95
+          yellow: 80
+          red: 0
+
+      - type: gauge
+        name: DMARC Pass Rate
+        entity: sensor.dmarc_pass_rate
+        min: 0
+        max: 100
+        severity:
+          green: 95
+          yellow: 80
+          red: 0
+
+      - type: custom:apexcharts-card
+        header:
+          show: true
+          title: SPF / DKIM failures
+        graph_span: 7d
+        span:
+          start: day
+        series:
+          - entity: sensor.spf_failures
+            name: SPF failures
+            type: column
+          - entity: sensor.dkim_failures
+            name: DKIM failures
+            type: column
+
+      - type: entities
+        title: Spoof attempts
+        entities:
+          - entity: sensor.spoof_attempts
+            name: Spoof attempts
+
+      - type: history-graph
+        title: History graph
+        entities:
+          - entity: sensor.spf_failures
+          - entity: sensor.dkim_failures
+          - entity: sensor.spoof_attempts
+        hours_to_show: 168
+
+      - type: markdown
+        title: Top sending IPs
+        content: >-
+          {{ states('sensor.dmarc_top_sending_ips') }}
+
+      - type: entities
+        title: TLS security status
+        entities:
+          - entity: sensor.tls_failed_servers
+            name: TLS checks failed
+
+      - type: map
+        title: World Map of Sending IPs
+        default_zoom: 1
+        hours_to_show: 168
+        geo_location_sources:
+          - dmarc_ip
+
+      - type: entities
+        title: SMTP uptime status
+        entities:
+          - entity: sensor.smtp_uptime_status
+            name: SMTP status
+          - entity: sensor.smtp_latency_ms
+            name: SMTP latency

@@ -1,0 +1,69 @@
+- platform: file
+  name: dmarc_pass_rate
+  file_path: /config/dmarc/aggregate.json
+  value_template: "{{ value_json.dmarc_pass_rate | float(0) }}"
+  unit_of_measurement: "%"
+
+- platform: file
+  name: reports_total
+  file_path: /config/dmarc/aggregate.json
+  value_template: "{{ value_json.reports_total | int(0) }}"
+
+- platform: file
+  name: spf_pass_rate
+  file_path: /config/dmarc/aggregate.json
+  value_template: "{{ value_json.spf_pass_rate | float(0) }}"
+  unit_of_measurement: "%"
+
+- platform: file
+  name: spf_failures
+  file_path: /config/dmarc/aggregate.json
+  value_template: "{{ value_json.spf_failures | int(0) }}"
+
+- platform: file
+  name: dkim_pass_rate
+  file_path: /config/dmarc/aggregate.json
+  value_template: "{{ value_json.dkim_pass_rate | float(0) }}"
+  unit_of_measurement: "%"
+
+- platform: file
+  name: dkim_failures
+  file_path: /config/dmarc/aggregate.json
+  value_template: "{{ value_json.dkim_failures | int(0) }}"
+
+- platform: file
+  name: spoof_attempts
+  file_path: /config/dmarc/aggregate.json
+  value_template: "{{ value_json.spoof_attempts | int(0) }}"
+
+- platform: file
+  name: total_messages
+  file_path: /config/dmarc/aggregate.json
+  value_template: "{{ value_json.total_messages | int(0) }}"
+
+- platform: file
+  name: tls_failed_servers
+  file_path: /config/dmarc/tls_report.json
+  value_template: "{{ value_json.failed_servers | int(0) }}"
+
+- platform: file
+  name: smtp_uptime_status
+  file_path: /config/dmarc/smtp_status.json
+  value_template: "{{ value_json.smtp_status | default('unknown') }}"
+
+- platform: file
+  name: smtp_latency_ms
+  file_path: /config/dmarc/smtp_status.json
+  value_template: "{{ value_json.latency_ms | int(0) }}"
+  unit_of_measurement: "ms"
+
+- platform: file
+  name: dmarc_top_sending_ips
+  file_path: /config/dmarc/aggregate.json
+  value_template: >-
+    {% set ips = value_json.top_sending_ips if value_json.top_sending_ips is defined else [] %}
+    {% if ips | length == 0 %}
+      none
+    {% else %}
+      {{ ips[:5] | map(attribute='ip') | join(', ') }}
+    {% endif %}

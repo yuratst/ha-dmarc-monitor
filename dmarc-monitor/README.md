@@ -1,16 +1,27 @@
 # Mail Security Monitor (Home Assistant Add-on)
 
-This add-on reads DMARC aggregate reports from an IMAP mailbox, parses reports with `parsedmarc`, and writes a summary to:
+This add-on connects to an IMAP mailbox, processes DMARC reports with `parsedmarc`, and writes JSON files for Home Assistant dashboards and sensors.
 
+Data flow:
+
+IMAP mailbox -> parsedmarc -> `/config/dmarc/*.json` -> Home Assistant sensors -> dashboard
+
+## Generated files
+
+- `/config/dmarc/aggregate_raw.json` (raw parsedmarc output)
+- `/config/dmarc/aggregate.json` (dashboard-ready summary + reports)
 - `/config/dmarc/summary.json`
+- `/config/dmarc/ip_locations.json`
+- `/config/dmarc/tls_report.json`
+- `/config/dmarc/smtp_status.json`
 
 ## Add-on options
 
 - `imap_host`
 - `imap_user`
-- `imap_password` (required)
+- `imap_password`
 
-Passwords are **not** stored in this repository.
+No passwords are stored in this repository.
 
 ## Use Home Assistant secrets.yaml
 
@@ -32,22 +43,9 @@ imap_user: "!secret dmarc_imap_user"
 imap_password: "!secret dmarc_imap_password"
 ```
 
-## Output JSON keys
+## Home Assistant files in this repo
 
-- `reports_total`
-- `messages_total`
-- `spf_pass`
-- `spf_fail`
-- `dkim_pass`
-- `dkim_fail`
-- `dmarc_pass`
-- `dmarc_fail`
-- `spoof_attempts`
-- `spf_pass_rate`
-- `dkim_pass_rate`
-- `dmarc_pass_rate`
-- `top_sending_ips`
-- `updated_at`
-- `errors`
+- `homeassistant/dmarc_sensors.yaml`
+- `homeassistant/dashboard_mail_security.yaml`
 
 The monitor checks mailbox reports every 30 minutes.

@@ -31,7 +31,12 @@ RUN apk add --no-cache \
 ENV PATH="/opt/venv/bin:${PATH}"
 
 COPY run.sh /run.sh
+COPY dmarc.ini /opt/dmarc-monitor/dmarc.ini.template
+COPY ip_extractor.py /opt/dmarc-monitor/ip_extractor.py
+COPY tls_check.py /opt/dmarc-monitor/tls_check.py
+COPY smtp_monitor.py /opt/dmarc-monitor/smtp_monitor.py
 COPY rootfs /
-RUN chmod +x /run.sh /etc/services.d/dmarc-monitor/run && mkdir -p /config/dmarc
+RUN chmod +x /run.sh /etc/services.d/dmarc-monitor/run \
+ && mkdir -p /config/dmarc /opt/dmarc-monitor
 
 VOLUME ["/config/dmarc"]
