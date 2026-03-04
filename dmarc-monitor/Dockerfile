@@ -1,18 +1,8 @@
-FROM python:3.11-alpine
+FROM ghcr.io/home-assistant/base:3.19
 
 RUN apk add --no-cache \
-    bash \
-    ca-certificates \
-    tzdata \
-    gcc \
-    musl-dev \
-    libffi-dev \
-    openssl-dev \
-    libxml2-dev \
-    libxslt-dev
-
-RUN printf '#!/bin/sh\nexec "$@"\n' > /usr/bin/with-contenv \
-    && chmod +x /usr/bin/with-contenv
+    python3 \
+    py3-pip
 
 RUN pip install --no-cache-dir \
     parsedmarc \
