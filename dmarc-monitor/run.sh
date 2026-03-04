@@ -1,87 +1,19 @@
 #!/usr/bin/with-contenv bash
 set -euo pipefail
 
-OPTIONS_FILE="/data/options.json"
-SECRETS_FILE="/config/secrets.yaml"
 OUT_DIR="/config/dmarc"
+INBOX_DIR="$OUT_DIR/inbox"
 AGG_FILE="$OUT_DIR/aggregate.json"
 SUMMARY_FILE="$OUT_DIR/summary.json"
 DOMAIN="tsutsylivskyy.nl"
 SLEEP_SECONDS=1800
 
-mkdir -p "$OUT_DIR"
+mkdir -p "$OUT_DIR" "$INBOX_DIR"
 echo "[dmarc-monitor] Version 1.0.3"
 echo "[dmarc-monitor] Service started"
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] [dmarc-monitor] $*"
-}
-
-load_options() {
-  eval "$(python3 - <<'PY'
-import json
-import shlex
-from pathlib import Path
-
-options_file = Path('/data/options.json')
-secrets_file = Path('/config/secrets.yaml')
-
-
-def read_secrets(path: Path) -> dict:
-    data = {}
-    if not path.exists():
-        return data
-    for raw_line in path.read_text(encoding='utf-8', errors='ignore').splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith('#') or ':' not in line:
-            continue
-        key, value = line.split(':', 1)
-        key = key.strip()
-        value = value.strip()
-        if not key:
-            continue
-        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-            value = value[1:-1]
-        data[key] = value
-    return data
-
-
-def resolve(value, secrets: dict) -> str:
-    if value is None:
-        return ''
-    if not isinstance(value, str):
-        return str(value)
-    cleaned = value.strip()
-    if cleaned.startswith('!secret '):
-        secret_key = cleaned.split(' ', 1)[1].strip()
-        return str(secrets.get(secret_key, '')).strip()
-    return cleaned
-
-options = {}
-if options_file.exists():
-    try:
-        options = json.loads(options_file.read_text(encoding='utf-8'))
-    except Exception:
-        options = {}
-
-secrets = read_secrets(secrets_file)
-
-imap_host = resolve(options.get('imap_host', ''), secrets)
-imap_user = resolve(options.get('imap_user', ''), secrets)
-imap_password = resolve(options.get('imap_password', ''), secrets)
-
-if not imap_host:
-    imap_host = secrets.get('strato_imap_host', '')
-if not imap_user:
-    imap_user = secrets.get('dmarc_imap_user', '')
-if not imap_password:
-    imap_password = secrets.get('dmarc_imap_password', '')
-
-print(f"IMAP_HOST={shlex.quote(imap_host)}")
-print(f"IMAP_USER={shlex.quote(imap_user)}")
-print(f"IMAP_PASSWORD={shlex.quote(imap_password)}")
-PY
-)"
 }
 
 write_summary() {
@@ -165,24 +97,12 @@ PY
 }
 
 run_once() {
-  load_options
-
-  if [[ -z "${IMAP_HOST}" || -z "${IMAP_USER}" || -z "${IMAP_PASSWORD}" ]]; then
-    log "Missing IMAP options. Set imap_host, imap_user and imap_password (or !secret values)."
-    write_summary
-    return 0
-  fi
-
-  echo "[dmarc-monitor] Connecting to IMAP"
-  log "Connecting to IMAP (${IMAP_HOST})"
-  log "Checking mailbox"
+  log "Checking inbox directory (${INBOX_DIR})"
 
   set +e
   parsedmarc \
-    --imap-host "${IMAP_HOST}" \
-    --imap-user "${IMAP_USER}" \
-    --imap-password "${IMAP_PASSWORD}" \
-    --output "${OUT_DIR}"
+    "${INBOX_DIR}" \
+    -o "${OUT_DIR}"
   PARSEDMARC_RC=$?
   set -e
 
