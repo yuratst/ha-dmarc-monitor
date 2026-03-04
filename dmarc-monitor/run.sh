@@ -100,10 +100,21 @@ run_once() {
   log "Checking inbox directory (${INBOX_DIR})"
 
   set +e
-  parsedmarc \
-    "${INBOX_DIR}" \
-    -o "${OUT_DIR}"
-  PARSEDMARC_RC=$?
+  PARSEDMARC_RC=0
+  FOUND_FILES=0
+  for f in "${INBOX_DIR}"/*; do
+    if [ -f "$f" ]; then
+      FOUND_FILES=1
+      parsedmarc "$f" -o "${OUT_DIR}"
+      rc=$?
+      if [[ $rc -ne 0 ]]; then
+        PARSEDMARC_RC=$rc
+      fi
+    fi
+  done
+  if [[ $FOUND_FILES -eq 0 ]]; then
+    log "No files found in inbox directory"
+  fi
   set -e
 
   if [[ ${PARSEDMARC_RC} -ne 0 ]]; then
