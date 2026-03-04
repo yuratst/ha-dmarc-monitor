@@ -11,6 +11,9 @@ RUN apk add --no-cache \
     libxml2-dev \
     libxslt-dev
 
+RUN printf '#!/bin/sh\nexec "$@"\n' > /usr/bin/with-contenv \
+    && chmod +x /usr/bin/with-contenv
+
 RUN pip install --no-cache-dir \
     parsedmarc \
     imapclient \
@@ -21,4 +24,4 @@ COPY run.sh /run.sh
 RUN chmod +x /run.sh && mkdir -p /config/dmarc
 
 VOLUME ["/config/dmarc"]
-ENTRYPOINT ["/run.sh"]
+CMD ["/run.sh"]

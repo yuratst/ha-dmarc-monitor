@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/with-contenv bashio
 set -euo pipefail
 
 OPTIONS_FILE="/data/options.json"
@@ -171,6 +171,7 @@ run_once() {
     return 0
   fi
 
+  echo "[dmarc-monitor] Connecting to IMAP"
   log "Connecting to IMAP (${IMAP_HOST})"
   log "Checking mailbox"
 
@@ -196,6 +197,7 @@ run_once() {
   write_summary
 }
 
+echo "[dmarc-monitor] Started"
 log "Started"
 
 while true; do

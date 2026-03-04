@@ -3,6 +3,7 @@ slug: dmarc_monitor
 description: DMARC monitoring for Home Assistant
 version: "1.0"
 startup: services
+init: false
 boot: auto
 arch:
   - amd64
