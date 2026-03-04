@@ -1,0 +1,19 @@
+name: Mail Security Monitor
+slug: dmarc_monitor
+description: DMARC monitoring for Home Assistant
+version: "1.0"
+startup: services
+boot: auto
+arch:
+  - amd64
+  - aarch64
+
+options:
+  imap_host: imap.strato.com
+  imap_user: dmarc@tsutsylivskyy.nl
+  imap_password: ""
+
+schema:
+  imap_host: str
+  imap_user: str
+  imap_password: password
