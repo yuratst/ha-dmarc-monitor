@@ -15,4 +15,3 @@ COPY rootfs /
 RUN chmod +x /run.sh && mkdir -p /config/dmarc
 
 VOLUME ["/config/dmarc"]
-CMD ["/run.sh"]
