@@ -117,6 +117,39 @@
       font-size: 13px;
       color: #fecaca;
     }
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      margin-bottom: 10px;
+    }
+    .tablink {
+      display: inline-block;
+      text-decoration: none;
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #0d1a35;
+      font-weight: 600;
+    }
+    .tablink.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .inline-input {
+      flex: 1;
+      min-width: 180px;
+      background: #0b1732;
+      color: #dbe8ff;
+      border: 1px solid #273a62;
+      border-radius: 10px;
+      padding: 10px;
+    }
+    .table-wrap {
+      overflow-x: auto;
+    }
     @media (max-width: 1100px) {
       .grid { grid-template-columns: 1fr; }
     }
@@ -137,140 +170,235 @@
       {% endif %}
     {% endwith %}
 
-    <div class="grid">
-      <div class="card">
-        <h2>1) Export & Upload</h2>
-        <div class="row">
-          <form method="post" action="{{ ingress_url('export_csv') }}">
-            <button type="submit">Export latest from DB</button>
+    <div class="tabs">
+      <a class="tablink {% if active_tab == 'overview' %}active{% endif %}" href="{{ ingress_url('index', tab='overview', preview=preview_file) }}">CSV Workflow</a>
+      <a class="tablink {% if active_tab == 'live' %}active{% endif %}" href="{{ ingress_url('index', tab='live', live_days=live_days, live_from=live_from, live_to=live_to) }}">Live DB</a>
+    </div>
+
+    {% if active_tab == 'overview' %}
+      <div class="grid">
+        <div class="card">
+          <h2>1) Export & Upload</h2>
+          <div class="row">
+            <form method="post" action="{{ ingress_url('export_csv') }}">
+              <button type="submit">Export latest from DB</button>
+            </form>
+            <span class="pill">Creates CSV in workspace/exports</span>
+          </div>
+
+          <form method="post" action="{{ ingress_url('upload_csv') }}" enctype="multipart/form-data">
+            <div class="row" style="margin-top:12px;">
+              <input type="file" name="csv_file" accept=".csv" required />
+              <button type="submit" class="secondary">Upload edited CSV</button>
+            </div>
           </form>
-          <span class="pill">Creates CSV in workspace/exports</span>
+
+          <h2 style="margin-top:18px;">2) Validate & Import</h2>
+          <form method="post" action="{{ ingress_url('validate_csv') }}">
+            <div class="row">
+              <select name="csv_path" required>
+                <option value="">Select CSV</option>
+                {% for f in csv_files %}
+                <option value="{{ f }}" {% if f==preview_file %}selected{% endif %}>{{ f }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="secondary">Validate</button>
+            </div>
+          </form>
+
+          <form method="post" action="{{ ingress_url('import_csv') }}">
+            <div class="row">
+              <select name="csv_path" required>
+                <option value="">Select CSV</option>
+                {% for f in csv_files %}
+                <option value="{{ f }}" {% if f==preview_file %}selected{% endif %}>{{ f }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="row small">
+              <label><input type="checkbox" name="auto_core" /> Try auto stop/start core via Supervisor API</label>
+              <label><input type="checkbox" name="strict" /> Strict mode (drops = error)</label>
+            </div>
+            <div class="row">
+              <button type="submit" class="warn">Run import (backup + dry-run + commit)</button>
+              {% if preview_file %}
+              <a href="{{ ingress_url('download_csv', file=preview_file) }}"><button type="button" class="secondary">Download selected CSV</button></a>
+              {% endif %}
+            </div>
+          </form>
+
+          <h2 style="margin-top:18px;">3) Edit by date (CSV)</h2>
+          <form method="post" action="{{ ingress_url('set_date') }}">
+            <div class="row">
+              <select name="csv_path" required>
+                <option value="">Select CSV</option>
+                {% for f in csv_files %}
+                <option value="{{ f }}" {% if f==preview_file %}selected{% endif %}>{{ f }}</option>
+                {% endfor %}
+              </select>
+              <input type="date" name="edit_date" required class="inline-input" />
+            </div>
+            <div class="row">
+              <input type="text" name="gas_m3" placeholder="gas_m3 (bv 206.0)" class="inline-input" />
+              <input type="text" name="stroom_t1_kwh" placeholder="stroom_t1_kwh" class="inline-input" />
+              <input type="text" name="stroom_t2_kwh" placeholder="stroom_t2_kwh" class="inline-input" />
+            </div>
+            <div class="row">
+              <input type="text" name="water_l" placeholder="water_l (bv 10446)" class="inline-input" />
+              <input type="text" name="notes" placeholder="notes (optioneel)" class="inline-input" style="flex:2;min-width:220px;" />
+              <button type="submit" class="secondary">Save date row</button>
+            </div>
+            <div class="row small">
+              Leeg veld = bestaande waarde behouden. Bestaat de datum nog niet, dan wordt een nieuwe rij toegevoegd.
+            </div>
+          </form>
         </div>
 
-        <form method="post" action="{{ ingress_url('upload_csv') }}" enctype="multipart/form-data">
-          <div class="row" style="margin-top:12px;">
-            <input type="file" name="csv_file" accept=".csv" required />
-            <button type="submit" class="secondary">Upload edited CSV</button>
-          </div>
-        </form>
+        <div class="card">
+          <h2>Rollback</h2>
+          <div class="danger">Use only if a bad import was committed. This restores one DB backup.</div>
+          <form method="post" action="{{ ingress_url('rollback') }}" style="margin-top:12px;">
+            <div class="row">
+              <select name="backup_name" required>
+                <option value="">Select DB backup</option>
+                {% for b in backups %}
+                <option value="{{ b }}">{{ b }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="row small">
+              <label><input type="checkbox" name="auto_core" /> Try auto stop/start core via Supervisor API</label>
+            </div>
+            <div class="row">
+              <button type="submit" class="err">Rollback selected backup</button>
+            </div>
+          </form>
 
-        <h2 style="margin-top:18px;">2) Validate & Import</h2>
-        <form method="post" action="{{ ingress_url('validate_csv') }}">
-          <div class="row">
-            <select name="csv_path" required>
-              <option value="">Select CSV</option>
-              {% for f in csv_files %}
-              <option value="{{ f }}" {% if f==preview_file %}selected{% endif %}>{{ f }}</option>
-              {% endfor %}
-            </select>
-            <button type="submit" class="secondary">Validate</button>
-          </div>
-        </form>
-
-        <form method="post" action="{{ ingress_url('import_csv') }}">
-          <div class="row">
-            <select name="csv_path" required>
-              <option value="">Select CSV</option>
-              {% for f in csv_files %}
-              <option value="{{ f }}" {% if f==preview_file %}selected{% endif %}>{{ f }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="row small">
-            <label><input type="checkbox" name="auto_core" /> Try auto stop/start core via Supervisor API</label>
-            <label><input type="checkbox" name="strict" /> Strict mode (drops = error)</label>
-          </div>
-          <div class="row">
-            <button type="submit" class="warn">Run import (backup + dry-run + commit)</button>
-            {% if preview_file %}
-            <a href="{{ ingress_url('download_csv', file=preview_file) }}"><button type="button" class="secondary">Download selected CSV</button></a>
-            {% endif %}
-          </div>
-        </form>
-
-        <h2 style="margin-top:18px;">3) Edit by date</h2>
-        <form method="post" action="{{ ingress_url('set_date') }}">
-          <div class="row">
-            <select name="csv_path" required>
-              <option value="">Select CSV</option>
-              {% for f in csv_files %}
-              <option value="{{ f }}" {% if f==preview_file %}selected{% endif %}>{{ f }}</option>
-              {% endfor %}
-            </select>
-            <input type="date" name="edit_date" required style="background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
-          </div>
-          <div class="row">
-            <input type="text" name="gas_m3" placeholder="gas_m3 (bv 206.0)" style="flex:1;min-width:180px;background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
-            <input type="text" name="stroom_t1_kwh" placeholder="stroom_t1_kwh" style="flex:1;min-width:180px;background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
-            <input type="text" name="stroom_t2_kwh" placeholder="stroom_t2_kwh" style="flex:1;min-width:180px;background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
-          </div>
-          <div class="row">
-            <input type="text" name="water_l" placeholder="water_l (bv 10446)" style="flex:1;min-width:180px;background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
-            <input type="text" name="notes" placeholder="notes (optioneel)" style="flex:2;min-width:220px;background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
-            <button type="submit" class="secondary">Save date row</button>
-          </div>
-          <div class="row small">
-            Leeg veld = bestaande waarde behouden. Bestaat de datum nog niet, dan wordt een nieuwe rij toegevoegd.
-          </div>
-        </form>
+          <h2 style="margin-top:16px;">Tips</h2>
+          <ul class="small">
+            <li>Use cumulative values in CSV (not daily deltas).</li>
+            <li>Keep dates unique and sorted.</li>
+            <li>Validate first, then import.</li>
+          </ul>
+        </div>
       </div>
 
-      <div class="card">
-        <h2>Rollback</h2>
-        <div class="danger">Use only if a bad import was committed. This restores one DB backup.</div>
-        <form method="post" action="{{ ingress_url('rollback') }}" style="margin-top:12px;">
-          <div class="row">
-            <select name="backup_name" required>
-              <option value="">Select DB backup</option>
-              {% for b in backups %}
-              <option value="{{ b }}">{{ b }}</option>
-              {% endfor %}
-            </select>
+      <div class="card" style="margin-top:16px;">
+        <h2>CSV Preview{% if preview_file %} - {{ preview_file }}{% endif %}</h2>
+        {% if preview_error %}
+          <div class="flash error">{{ preview_error }}</div>
+        {% elif preview_headers %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {% for h in preview_headers %}
+                    <th>{{ h }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in preview_rows %}
+                <tr>
+                  {% for c in row %}
+                    <td>{{ c }}</td>
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
           </div>
-          <div class="row small">
-            <label><input type="checkbox" name="auto_core" /> Try auto stop/start core via Supervisor API</label>
-          </div>
-          <div class="row">
-            <button type="submit" class="err">Rollback selected backup</button>
-          </div>
-        </form>
-
-        <h2 style="margin-top:16px;">Tips</h2>
-        <ul class="small">
-          <li>Use cumulative values in CSV (not daily deltas).</li>
-          <li>Keep dates unique and sorted.</li>
-          <li>Validate first, then import.</li>
-        </ul>
+        {% else %}
+          <div class="small">Select or upload a CSV to preview rows.</div>
+        {% endif %}
       </div>
-    </div>
+    {% endif %}
 
-    <div class="card" style="margin-top:16px;">
-      <h2>CSV Preview{% if preview_file %} - {{ preview_file }}{% endif %}</h2>
-      {% if preview_error %}
-        <div class="flash error">{{ preview_error }}</div>
-      {% elif preview_headers %}
-        <table>
-          <thead>
-            <tr>
-              {% for h in preview_headers %}
-                <th>{{ h }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in preview_rows %}
-            <tr>
-              {% for c in row %}
-                <td>{{ c }}</td>
-              {% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <div class="small">Select or upload a CSV to preview rows.</div>
-      {% endif %}
-    </div>
+    {% if active_tab == 'live' %}
+      <div class="grid">
+        <div class="card">
+          <h2>Live DB filters</h2>
+          <form method="get" action="{{ ingress_url('index') }}">
+            <input type="hidden" name="tab" value="live" />
+            <div class="row">
+              <input type="text" name="live_days" value="{{ live_days }}" class="inline-input" placeholder="Days (1-400)" />
+              <input type="date" name="live_from" value="{{ live_from }}" class="inline-input" />
+              <input type="date" name="live_to" value="{{ live_to }}" class="inline-input" />
+              <button type="submit" class="secondary">Refresh</button>
+            </div>
+            <div class="row small">Gebruik alleen days, of een expliciete from/to range.</div>
+          </form>
+
+          <h2 style="margin-top:18px;">Edit live database by date</h2>
+          <form method="post" action="{{ ingress_url('live_set') }}">
+            <input type="hidden" name="live_days" value="{{ live_days }}" />
+            <input type="hidden" name="live_from" value="{{ live_from }}" />
+            <input type="hidden" name="live_to" value="{{ live_to }}" />
+            <div class="row">
+              <input type="date" name="live_edit_date" required class="inline-input" />
+            </div>
+            <div class="row">
+              <input type="text" name="gas_m3" placeholder="gas_m3" class="inline-input" />
+              <input type="text" name="stroom_t1_kwh" placeholder="stroom_t1_kwh" class="inline-input" />
+              <input type="text" name="stroom_t2_kwh" placeholder="stroom_t2_kwh" class="inline-input" />
+              <input type="text" name="water_l" placeholder="water_l" class="inline-input" />
+            </div>
+            <div class="row small">
+              <label><input type="checkbox" name="do_backup" checked /> Create backup before live update</label>
+              <label><input type="checkbox" name="auto_core" /> Try auto stop/start core via Supervisor API</label>
+            </div>
+            <div class="row">
+              <button type="submit" class="warn">Write directly to DB</button>
+            </div>
+            <div class="danger">Wijzigt direct `statistics` en `statistics_short_term` voor de gekozen datum.</div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Live status</h2>
+          <ul class="small">
+            <li>Source: Home Assistant statistics DB</li>
+            <li>Sensoren: gas, stroom T1/T2, water</li>
+            <li>Datum = local timezone {{ timezone }}</li>
+          </ul>
+          {% if live_error %}
+            <div class="flash error">{{ live_error }}</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h2>Live daily values</h2>
+        {% if live_rows %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Gas (m³)</th>
+                  <th>Stroom T1 (kWh)</th>
+                  <th>Stroom T2 (kWh)</th>
+                  <th>Water (L)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in live_rows %}
+                  <tr>
+                    <td>{{ r.date }}</td>
+                    <td>{{ r.gas_m3 }}</td>
+                    <td>{{ r.stroom_t1_kwh }}</td>
+                    <td>{{ r.stroom_t2_kwh }}</td>
+                    <td>{{ r.water_l }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="small">Geen live rows in dit bereik.</div>
+        {% endif %}
+      </div>
+    {% endif %}
   </div>
 </body>
 </html>

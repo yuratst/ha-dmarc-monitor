@@ -5,11 +5,13 @@ import csv
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import requests
 from flask import Flask, flash, redirect, render_template, request, send_file, url_for
@@ -22,6 +24,13 @@ WORKSPACE = Path(os.environ.get("WORKSPACE_DIR", "/config/_tmp_energy_restore"))
 TIMEZONE = os.environ.get("TIMEZONE_NAME", "Europe/Amsterdam")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 CSV_COLUMNS = ["date", "gas_m3", "stroom_t1_kwh", "stroom_t2_kwh", "water_l", "notes"]
+LIVE_STAT_MAP = {
+    "gas_m3": "sensor.gas_meter_gas",
+    "stroom_t1_kwh": "sensor.p1_meter_energie_import_tarief_1",
+    "stroom_t2_kwh": "sensor.p1_meter_energie_import_tarief_2",
+    "water_l": "sensor.watermeter_total_water_usage",
+}
+LIVE_FIELDS = ["gas_m3", "stroom_t1_kwh", "stroom_t2_kwh", "water_l"]
 
 app = Flask(__name__, template_folder=str(ROOT / "templates"))
 app.secret_key = os.environ.get("ENERGY_CSV_STUDIO_SECRET", "energy-csv-studio")
@@ -164,6 +173,188 @@ def _normalize_decimal(raw: str) -> str:
     return txt
 
 
+def _parse_date_input(raw: str) -> Optional[date]:
+    txt = (raw or "").strip()
+    if not txt:
+        return None
+    try:
+        return datetime.strptime(txt, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _fmt_live_value(field: str, value: Optional[float]) -> str:
+    if value is None:
+        return ""
+    decimals = 1 if field == "water_l" else 3
+    txt = f"{value:.{decimals}f}"
+    return txt.rstrip("0").rstrip(".") if "." in txt else txt
+
+
+def _connect_read_immutable() -> sqlite3.Connection:
+    uri = f"file:{DB_PATH}?immutable=1"
+    conn = sqlite3.connect(uri, uri=True, timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
+    return conn
+
+
+def _local_day_start_ts(day: date) -> float:
+    local_tz = ZoneInfo(TIMEZONE)
+    local_dt = datetime(day.year, day.month, day.day, 0, 0, tzinfo=local_tz)
+    return local_dt.astimezone(timezone.utc).timestamp()
+
+
+def _start_ts_to_local_day(start_ts: float) -> date:
+    local_tz = ZoneInfo(TIMEZONE)
+    dt_utc = datetime.fromtimestamp(float(start_ts), tz=timezone.utc)
+    return dt_utc.astimezone(local_tz).date()
+
+
+def _load_live_daily_rows(
+    days: int = 45, from_day: Optional[date] = None, to_day: Optional[date] = None
+) -> Tuple[List[dict], str]:
+    rows_per_field: Dict[str, Dict[date, float]] = {field: {} for field in LIVE_FIELDS}
+    try:
+        conn = _connect_read_immutable()
+    except Exception as exc:
+        return [], f"Cannot open DB in read mode: {exc}"
+
+    try:
+        cur = conn.cursor()
+        stat_meta: Dict[str, int] = {}
+        for field, sid in LIVE_STAT_MAP.items():
+            cur.execute("SELECT id FROM statistics_meta WHERE statistic_id = ?", (sid,))
+            row = cur.fetchone()
+            if row is not None:
+                stat_meta[field] = int(row[0])
+
+        if not stat_meta:
+            return [], "No statistics metadata found for live view."
+
+        if from_day and to_day and from_day > to_day:
+            from_day, to_day = to_day, from_day
+
+        if from_day is None and to_day is None:
+            to_day = datetime.now(ZoneInfo(TIMEZONE)).date()
+            from_day = to_day - timedelta(days=max(1, days) - 1)
+        elif from_day is None and to_day is not None:
+            from_day = to_day - timedelta(days=max(1, days) - 1)
+        elif from_day is not None and to_day is None:
+            to_day = from_day + timedelta(days=max(1, days) - 1)
+
+        min_ts = _local_day_start_ts(from_day)
+        max_ts = _local_day_start_ts(to_day + timedelta(days=1))
+
+        for field, metadata_id in stat_meta.items():
+            cur.execute(
+                """
+                SELECT start_ts, state
+                FROM statistics
+                WHERE metadata_id = ?
+                  AND start_ts >= ?
+                  AND start_ts < ?
+                ORDER BY start_ts ASC
+                """,
+                (metadata_id, min_ts, max_ts),
+            )
+            for start_ts, state in cur.fetchall():
+                if state is None:
+                    continue
+                d = _start_ts_to_local_day(float(start_ts))
+                rows_per_field[field][d] = float(state)
+
+        all_days = set()
+        for per_day in rows_per_field.values():
+            all_days.update(per_day.keys())
+        if not all_days:
+            return [], ""
+
+        out: List[dict] = []
+        for d in sorted(all_days, reverse=True):
+            if d < from_day or d > to_day:
+                continue
+            out.append(
+                {
+                    "date": d.isoformat(),
+                    "gas_m3": _fmt_live_value("gas_m3", rows_per_field["gas_m3"].get(d)),
+                    "stroom_t1_kwh": _fmt_live_value(
+                        "stroom_t1_kwh", rows_per_field["stroom_t1_kwh"].get(d)
+                    ),
+                    "stroom_t2_kwh": _fmt_live_value(
+                        "stroom_t2_kwh", rows_per_field["stroom_t2_kwh"].get(d)
+                    ),
+                    "water_l": _fmt_live_value("water_l", rows_per_field["water_l"].get(d)),
+                }
+            )
+        return out, ""
+    except Exception as exc:
+        return [], str(exc)
+    finally:
+        conn.close()
+
+
+def _stat_meta_ids(conn: sqlite3.Connection) -> Dict[str, int]:
+    cur = conn.cursor()
+    out: Dict[str, int] = {}
+    for field, sid in LIVE_STAT_MAP.items():
+        cur.execute("SELECT id FROM statistics_meta WHERE statistic_id = ?", (sid,))
+        row = cur.fetchone()
+        if row is None:
+            raise RuntimeError(f"statistics_meta missing for {sid}")
+        out[field] = int(row[0])
+    return out
+
+
+def _sum_offset(conn: sqlite3.Connection, metadata_id: int) -> float:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT state, sum
+        FROM statistics
+        WHERE metadata_id = ?
+        ORDER BY start_ts ASC
+        LIMIT 1
+        """,
+        (metadata_id,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return 0.0
+    state = float(row[0] or 0.0)
+    total_sum = float(row[1] or 0.0)
+    return state - total_sum
+
+
+def _upsert_live_value(
+    cur: sqlite3.Cursor, metadata_id: int, day: date, state: float, offset: float
+) -> None:
+    ts = _local_day_start_ts(day)
+    now_ts = datetime.now(timezone.utc).timestamp()
+    total_sum = state - offset
+    cur.execute(
+        """
+        INSERT INTO statistics (created_ts, metadata_id, start_ts, state, sum)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(metadata_id, start_ts) DO UPDATE SET
+          created_ts = excluded.created_ts,
+          state = excluded.state,
+          sum = excluded.sum
+        """,
+        (now_ts, metadata_id, ts, state, total_sum),
+    )
+    cur.execute(
+        """
+        INSERT INTO statistics_short_term (created_ts, metadata_id, start_ts, state, sum)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(metadata_id, start_ts) DO UPDATE SET
+          created_ts = excluded.created_ts,
+          state = excluded.state,
+          sum = excluded.sum
+        """,
+        (now_ts, metadata_id, ts, state, total_sum),
+    )
+
+
 def _upsert_csv_date(path: Path, d: date, updates: dict) -> Tuple[bool, str]:
     headers, rows = _read_csv_dict_rows(path)
     target = d.isoformat()
@@ -283,6 +474,10 @@ def health():
 @app.get("/")
 def index():
     _ensure_workspace()
+    active_tab = (request.args.get("tab") or "overview").strip().lower()
+    if active_tab not in ("overview", "live"):
+        active_tab = "overview"
+
     csv_files = _list_csv_files()
     backups = _list_backups()
     preview_file = request.args.get("preview", "")
@@ -302,9 +497,30 @@ def index():
     if DB_PATH.exists():
         db_size_mb = DB_PATH.stat().st_size / (1024 * 1024)
 
+    live_days_raw = (request.args.get("live_days") or "45").strip()
+    try:
+        live_days = int(live_days_raw)
+    except ValueError:
+        live_days = 45
+    live_days = max(1, min(400, live_days))
+
+    live_from_raw = (request.args.get("live_from") or "").strip()
+    live_to_raw = (request.args.get("live_to") or "").strip()
+    live_from = _parse_date_input(live_from_raw)
+    live_to = _parse_date_input(live_to_raw)
+    live_rows: List[dict] = []
+    live_error = ""
+    if active_tab == "live":
+        live_rows, live_error = _load_live_daily_rows(
+            days=live_days,
+            from_day=live_from,
+            to_day=live_to,
+        )
+
     return render_template(
         "index.html",
         app_name=APP_NAME,
+        active_tab=active_tab,
         db_path=str(DB_PATH),
         db_size_mb=f"{db_size_mb:.1f}",
         workspace=str(WORKSPACE),
@@ -315,6 +531,11 @@ def index():
         preview_headers=preview_headers,
         preview_rows=preview_rows,
         preview_error=preview_error,
+        live_rows=live_rows,
+        live_error=live_error,
+        live_days=live_days,
+        live_from=live_from_raw,
+        live_to=live_to_raw,
     )
 
 
@@ -430,6 +651,92 @@ def set_date():
         flash(f"Date edit failed: {exc}", "error")
 
     return redirect(_ingress_url("index", preview=selected))
+
+
+@app.post("/live-set")
+def live_set():
+    raw_date = (request.form.get("live_edit_date") or "").strip()
+    live_days = (request.form.get("live_days") or "45").strip()
+    live_from = (request.form.get("live_from") or "").strip()
+    live_to = (request.form.get("live_to") or "").strip()
+    auto_core = request.form.get("auto_core") == "on"
+    do_backup = request.form.get("do_backup") == "on"
+
+    d = _parse_date_input(raw_date)
+    if d is None:
+        flash("Invalid live date (expected YYYY-MM-DD)", "error")
+        return redirect(
+            _ingress_url("index", tab="live", live_days=live_days, live_from=live_from, live_to=live_to)
+        )
+
+    values: Dict[str, float] = {}
+    try:
+        for field in LIVE_FIELDS:
+            raw = (request.form.get(field) or "").strip()
+            if raw == "":
+                continue
+            values[field] = float(_normalize_decimal(raw))
+    except ValueError:
+        flash("Invalid numeric value in live edit form", "error")
+        return redirect(
+            _ingress_url("index", tab="live", live_days=live_days, live_from=live_from, live_to=live_to)
+        )
+
+    if not values:
+        flash("No values provided for live update", "error")
+        return redirect(
+            _ingress_url("index", tab="live", live_days=live_days, live_from=live_from, live_to=live_to)
+        )
+
+    core_stopped = False
+    try:
+        if auto_core:
+            ok, msg = _stop_core()
+            if ok:
+                core_stopped = True
+                flash("Core stopped", "success")
+            else:
+                flash(f"Core stop failed: {msg}", "warn")
+            time.sleep(2)
+
+        if do_backup:
+            backup_db, extra = _backup_db()
+            flash(f"Backup created: {backup_db.name}", "success")
+            for e in extra:
+                flash(f"Backup created: {e.name}", "log")
+
+        conn = sqlite3.connect(str(DB_PATH), timeout=120.0)
+        conn.execute("PRAGMA busy_timeout=120000")
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            mids = _stat_meta_ids(conn)
+            cur = conn.cursor()
+            updates = []
+            for field, state in values.items():
+                metadata_id = mids[field]
+                offset = _sum_offset(conn, metadata_id)
+                _upsert_live_value(cur, metadata_id, d, state, offset)
+                updates.append(f"{field}={_fmt_live_value(field, state)}")
+            conn.commit()
+            flash(f"Live DB updated for {d.isoformat()}: " + ", ".join(updates), "success")
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    except Exception as exc:
+        flash(f"Live DB update failed: {exc}", "error")
+    finally:
+        if auto_core and core_stopped:
+            ok, msg = _start_core()
+            if ok:
+                flash("Core started", "success")
+            else:
+                flash(f"Core start failed: {msg}", "warn")
+
+    return redirect(
+        _ingress_url("index", tab="live", live_days=live_days, live_from=live_from, live_to=live_to)
+    )
 
 
 @app.post("/import")

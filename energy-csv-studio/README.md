@@ -28,6 +28,12 @@ Visual tool for repairing Home Assistant energy history using CSV.
 5. Import (backup + dry-run + commit)
 6. Rollback if needed
 
+## Live DB tab
+
+- View live daily values directly from `statistics`
+- Filter by date range / number of days
+- Update one date directly in database (with optional backup and optional core stop/start)
+
 ## Notes
 
 - CSV uses cumulative values.
