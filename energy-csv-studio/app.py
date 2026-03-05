@@ -30,6 +30,42 @@ def _log(msg: str) -> None:
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [energy-csv-studio] {msg}", flush=True)
 
 
+def _ingress_prefix() -> str:
+    for key in ("X-Ingress-Path", "X-Forwarded-Prefix"):
+        raw = (request.headers.get(key) or "").strip()
+        if raw:
+            return "/" + raw.strip("/")
+    script_root = (request.script_root or "").strip()
+    if script_root:
+        return "/" + script_root.strip("/")
+    return ""
+
+
+def _ingress_url(endpoint: str, **values) -> str:
+    path = url_for(endpoint, **values)
+    prefix = _ingress_prefix()
+    if not prefix:
+        return path
+    if path == prefix or path.startswith(prefix + "/"):
+        return path
+    if path.startswith("/"):
+        return prefix + path
+    return prefix + "/" + path
+
+
+@app.before_request
+def _set_script_name_from_ingress_headers():
+    # Ensure url_for() includes ingress prefix when HA proxies under /api/hassio_ingress/<token>.
+    prefix = (request.headers.get("X-Ingress-Path") or request.headers.get("X-Forwarded-Prefix") or "").strip()
+    if prefix:
+        request.environ["SCRIPT_NAME"] = "/" + prefix.strip("/")
+
+
+@app.context_processor
+def _inject_template_helpers():
+    return {"ingress_url": _ingress_url}
+
+
 def _ensure_workspace() -> None:
     WORKSPACE.mkdir(parents=True, exist_ok=True)
     (WORKSPACE / "uploads").mkdir(parents=True, exist_ok=True)
@@ -228,7 +264,7 @@ def export_csv():
         flash(f"Export OK: {out}", "success")
     else:
         flash(f"Export failed: {output}", "error")
-    return redirect(url_for("index", preview=str(out.relative_to(WORKSPACE))))
+    return redirect(_ingress_url("index", preview=str(out.relative_to(WORKSPACE))))
 
 
 @app.post("/upload")
@@ -237,18 +273,18 @@ def upload_csv():
     f = request.files.get("csv_file")
     if f is None or not f.filename:
         flash("No file uploaded", "error")
-        return redirect(url_for("index"))
+        return redirect(_ingress_url("index"))
 
     if not f.filename.lower().endswith(".csv"):
         flash("Only .csv files are allowed", "error")
-        return redirect(url_for("index"))
+        return redirect(_ingress_url("index"))
 
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in Path(f.filename).name)
     target = WORKSPACE / "uploads" / f"{ts}_{safe}"
     f.save(target)
     flash(f"Uploaded: {target.name}", "success")
-    return redirect(url_for("index", preview=str(target.relative_to(WORKSPACE))))
+    return redirect(_ingress_url("index", preview=str(target.relative_to(WORKSPACE))))
 
 
 @app.post("/validate")
@@ -256,13 +292,13 @@ def validate_csv():
     selected = (request.form.get("csv_path") or "").strip()
     if not selected:
         flash("Select a CSV file first", "error")
-        return redirect(url_for("index"))
+        return redirect(_ingress_url("index"))
 
     try:
         path = _resolve_under_workspace(selected)
     except Exception as exc:
         flash(f"Invalid file: {exc}", "error")
-        return redirect(url_for("index"))
+        return redirect(_ingress_url("index"))
 
     rc, output = _run_tool(["validate", "--csv", str(path)])
     if rc == 0:
@@ -270,7 +306,7 @@ def validate_csv():
     else:
         flash("Validation failed", "error")
     flash(output or "(no output)", "log")
-    return redirect(url_for("index", preview=selected))
+    return redirect(_ingress_url("index", preview=selected))
 
 
 @app.post("/import")
@@ -281,13 +317,13 @@ def import_csv():
 
     if not selected:
         flash("Select a CSV file first", "error")
-        return redirect(url_for("index"))
+        return redirect(_ingress_url("index"))
 
     try:
         path = _resolve_under_workspace(selected)
     except Exception as exc:
         flash(f"Invalid file: {exc}", "error")
-        return redirect(url_for("index"))
+        return redirect(_ingress_url("index"))
 
     core_stopped = False
     try:
@@ -312,7 +348,7 @@ def import_csv():
         flash(out_dry or "(no output)", "log")
         if rc_dry != 0:
             flash("Dry-run failed; import aborted", "error")
-            return redirect(url_for("index", preview=selected))
+            return redirect(_ingress_url("index", preview=selected))
 
         run_args = ["import", "--db", str(DB_PATH), "--csv", str(path), "--timezone", TIMEZONE]
         if strict:
@@ -334,7 +370,7 @@ def import_csv():
             else:
                 flash(f"Core start failed: {msg}", "warn")
 
-    return redirect(url_for("index", preview=selected))
+    return redirect(_ingress_url("index", preview=selected))
 
 
 @app.post("/rollback")
@@ -344,7 +380,7 @@ def rollback():
 
     if not backup:
         flash("Select backup first", "error")
-        return redirect(url_for("index"))
+        return redirect(_ingress_url("index"))
 
     core_stopped = False
     try:
@@ -370,7 +406,7 @@ def rollback():
             else:
                 flash(f"Core start failed: {msg}", "warn")
 
-    return redirect(url_for("index"))
+    return redirect(_ingress_url("index"))
 
 
 @app.get("/download")
@@ -378,15 +414,15 @@ def download_csv():
     selected = (request.args.get("file") or "").strip()
     if not selected:
         flash("No file selected", "error")
-        return redirect(url_for("index"))
+        return redirect(_ingress_url("index"))
     try:
         path = _resolve_under_workspace(selected)
     except Exception as exc:
         flash(f"Invalid file: {exc}", "error")
-        return redirect(url_for("index"))
+        return redirect(_ingress_url("index"))
     if not path.exists() or not path.is_file():
         flash("File not found", "error")
-        return redirect(url_for("index"))
+        return redirect(_ingress_url("index"))
     return send_file(path, as_attachment=True, download_name=path.name)
 
 

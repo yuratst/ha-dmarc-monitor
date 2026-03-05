@@ -141,13 +141,13 @@
       <div class="card">
         <h2>1) Export & Upload</h2>
         <div class="row">
-          <form method="post" action="{{ url_for('export_csv') }}">
+          <form method="post" action="{{ ingress_url('export_csv') }}">
             <button type="submit">Export latest from DB</button>
           </form>
           <span class="pill">Creates CSV in workspace/exports</span>
         </div>
 
-        <form method="post" action="{{ url_for('upload_csv') }}" enctype="multipart/form-data">
+        <form method="post" action="{{ ingress_url('upload_csv') }}" enctype="multipart/form-data">
           <div class="row" style="margin-top:12px;">
             <input type="file" name="csv_file" accept=".csv" required />
             <button type="submit" class="secondary">Upload edited CSV</button>
@@ -155,7 +155,7 @@
         </form>
 
         <h2 style="margin-top:18px;">2) Validate & Import</h2>
-        <form method="post" action="{{ url_for('validate_csv') }}">
+        <form method="post" action="{{ ingress_url('validate_csv') }}">
           <div class="row">
             <select name="csv_path" required>
               <option value="">Select CSV</option>
@@ -167,7 +167,7 @@
           </div>
         </form>
 
-        <form method="post" action="{{ url_for('import_csv') }}">
+        <form method="post" action="{{ ingress_url('import_csv') }}">
           <div class="row">
             <select name="csv_path" required>
               <option value="">Select CSV</option>
@@ -183,7 +183,7 @@
           <div class="row">
             <button type="submit" class="warn">Run import (backup + dry-run + commit)</button>
             {% if preview_file %}
-            <a href="{{ url_for('download_csv', file=preview_file) }}"><button type="button" class="secondary">Download selected CSV</button></a>
+            <a href="{{ ingress_url('download_csv', file=preview_file) }}"><button type="button" class="secondary">Download selected CSV</button></a>
             {% endif %}
           </div>
         </form>
@@ -192,7 +192,7 @@
       <div class="card">
         <h2>Rollback</h2>
         <div class="danger">Use only if a bad import was committed. This restores one DB backup.</div>
-        <form method="post" action="{{ url_for('rollback') }}" style="margin-top:12px;">
+        <form method="post" action="{{ ingress_url('rollback') }}" style="margin-top:12px;">
           <div class="row">
             <select name="backup_name" required>
               <option value="">Select DB backup</option>
