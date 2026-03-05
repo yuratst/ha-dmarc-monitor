@@ -20,6 +20,7 @@ IMAP mailbox -> parsedmarc -> `/config/dmarc/*.json` -> Home Assistant sensors -
 - `imap_host`
 - `imap_user`
 - `imap_password`
+- `imap_reports_folder` (default: `INBOX`)
 
 No passwords are stored in this repository.
 
@@ -49,3 +50,7 @@ imap_password: "!secret dmarc_imap_password"
 - `homeassistant/dashboard_mail_security.yaml`
 
 The monitor checks mailbox reports every 30 minutes.
+
+Important:
+- If `imap_user` points to a personal mailbox, parsedmarc can process non-DMARC mail too.
+- Prefer a dedicated DMARC mailbox/folder and set `imap_reports_folder` accordingly.

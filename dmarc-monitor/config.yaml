@@ -1,7 +1,7 @@
 name: Mail Security Monitor
 slug: dmarc_monitor
 description: DMARC monitoring for Home Assistant
-version: "1.1.0"
+version: "1.1.1"
 startup: services
 init: false
 boot: auto
@@ -13,8 +13,10 @@ options:
   imap_host: ""
   imap_user: ""
   imap_password: ""
+  imap_reports_folder: "INBOX"
 
 schema:
   imap_host: str
   imap_user: str
   imap_password: password
+  imap_reports_folder: str

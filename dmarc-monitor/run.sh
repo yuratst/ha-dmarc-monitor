@@ -50,6 +50,10 @@ def resolve_option(value, secrets):
     if not isinstance(value, str):
         return str(value)
     cleaned = value.strip()
+    if (cleaned.startswith('"') and cleaned.endswith('"')) or (
+        cleaned.startswith("'") and cleaned.endswith("'")
+    ):
+        cleaned = cleaned[1:-1].strip()
     if cleaned.startswith("!secret "):
         secret_key = cleaned.split(" ", 1)[1].strip()
         return str(secrets.get(secret_key, "")).strip()
@@ -74,16 +78,18 @@ imap_user = resolve_option(options.get("imap_user", ""), secrets) or secrets.get
 imap_password = resolve_option(options.get("imap_password", ""), secrets) or secrets.get(
     "dmarc_imap_password", ""
 )
+imap_reports_folder = resolve_option(options.get("imap_reports_folder", ""), secrets) or "INBOX"
 ipinfo_token = secrets.get("ipinfo_token", "")
 
 print(f"IMAP_HOST={shlex.quote(imap_host)}")
 print(f"IMAP_USER={shlex.quote(imap_user)}")
 print(f"IMAP_PASSWORD={shlex.quote(imap_password)}")
+print(f"IMAP_REPORTS_FOLDER={shlex.quote(imap_reports_folder)}")
 print(f"IPINFO_TOKEN={shlex.quote(ipinfo_token)}")
 PY
 )"
 
-  export IMAP_HOST IMAP_USER IMAP_PASSWORD IPINFO_TOKEN
+  export IMAP_HOST IMAP_USER IMAP_PASSWORD IMAP_REPORTS_FOLDER IPINFO_TOKEN
 }
 
 render_config() {
@@ -100,6 +106,7 @@ replacements = {
     "{{IMAP_HOST}}": os.environ.get("IMAP_HOST", "").replace("%", "%%"),
     "{{IMAP_USER}}": os.environ.get("IMAP_USER", "").replace("%", "%%"),
     "{{IMAP_PASSWORD}}": os.environ.get("IMAP_PASSWORD", "").replace("%", "%%"),
+    "{{IMAP_REPORTS_FOLDER}}": os.environ.get("IMAP_REPORTS_FOLDER", "INBOX").replace("%", "%%"),
 }
 
 for needle, value in replacements.items():
@@ -249,6 +256,33 @@ summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 PY
 }
 
+aggregate_has_reports() {
+  local src="$1"
+  python3 - "$src" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    raise SystemExit(1)
+try:
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+
+reports = []
+if isinstance(loaded, list):
+    reports = loaded
+elif isinstance(loaded, dict):
+    report_list = loaded.get("reports")
+    if isinstance(report_list, list):
+        reports = report_list
+
+raise SystemExit(0 if len(reports) > 0 else 1)
+PY
+}
+
 run_once() {
   log "checking mailbox"
   load_options
@@ -263,6 +297,12 @@ run_once() {
     python3 /opt/dmarc-monitor/smtp_monitor.py >/dev/null 2>&1 || true
     return 0
   fi
+  if [[ "${IMAP_HOST}" == *"!secret"* || "${IMAP_USER}" == *"!secret"* || "${IMAP_PASSWORD}" == *"!secret"* ]]; then
+    log "Unresolved !secret value detected in add-on options; check option formatting."
+    return 0
+  fi
+
+  log "using imap host=${IMAP_HOST} user=${IMAP_USER} folder=${IMAP_REPORTS_FOLDER}"
 
   render_config
 
@@ -276,7 +316,12 @@ run_once() {
   fi
 
   if [[ -f "${AGGREGATE_JSON}" ]]; then
-    cp "${AGGREGATE_JSON}" "${RAW_AGGREGATE}"
+    if aggregate_has_reports "${AGGREGATE_JSON}"; then
+      cp "${AGGREGATE_JSON}" "${RAW_AGGREGATE}"
+      log "parsedmarc returned one or more reports"
+    else
+      log "no new reports returned; keeping previous aggregate history"
+    fi
   fi
 
   log "updating sensors"
