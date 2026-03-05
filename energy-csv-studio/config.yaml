@@ -1,0 +1,29 @@
+name: Energy CSV Studio
+slug: energy_csv_studio
+description: Visual CSV editor/importer for Home Assistant energy statistics
+version: "1.0.0"
+startup: services
+boot: auto
+init: false
+arch:
+  - amd64
+  - aarch64
+
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:table-edit
+panel_title: Energy CSV Studio
+hassio_api: true
+
+map:
+  - config:rw
+
+options:
+  db_path: /config/home-assistant_v2.db
+  workspace_dir: /config/_tmp_energy_restore
+  timezone: Europe/Amsterdam
+
+schema:
+  db_path: str
+  workspace_dir: str
+  timezone: str
