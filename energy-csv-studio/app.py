@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 import time
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import List, Tuple
 
@@ -21,6 +21,7 @@ DB_PATH = Path(os.environ.get("DB_PATH", "/config/home-assistant_v2.db"))
 WORKSPACE = Path(os.environ.get("WORKSPACE_DIR", "/config/_tmp_energy_restore"))
 TIMEZONE = os.environ.get("TIMEZONE_NAME", "Europe/Amsterdam")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
+CSV_COLUMNS = ["date", "gas_m3", "stroom_t1_kwh", "stroom_t2_kwh", "water_l", "notes"]
 
 app = Flask(__name__, template_folder=str(ROOT / "templates"))
 app.secret_key = os.environ.get("ENERGY_CSV_STUDIO_SECRET", "energy-csv-studio")
@@ -126,6 +127,79 @@ def _preview_csv(path: Path, max_rows: int = 20):
     except Exception as exc:
         return [], [], str(exc)
     return headers, rows, ""
+
+
+def _read_csv_dict_rows(path: Path) -> Tuple[List[str], List[dict]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        headers = list(reader.fieldnames or [])
+        if not headers:
+            headers = CSV_COLUMNS[:]
+        for col in CSV_COLUMNS:
+            if col not in headers:
+                headers.append(col)
+        rows = []
+        for row in reader:
+            normalized = {k: (row.get(k, "") or "").strip() for k in headers}
+            rows.append(normalized)
+    return headers, rows
+
+
+def _write_csv_dict_rows(path: Path, headers: List[str], rows: List[dict]) -> None:
+    for col in CSV_COLUMNS:
+        if col not in headers:
+            headers.append(col)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _normalize_decimal(raw: str) -> str:
+    txt = (raw or "").strip()
+    if txt == "":
+        return ""
+    txt = txt.replace(",", ".")
+    float(txt)  # validate
+    return txt
+
+
+def _upsert_csv_date(path: Path, d: date, updates: dict) -> Tuple[bool, str]:
+    headers, rows = _read_csv_dict_rows(path)
+    target = d.isoformat()
+    found = False
+
+    for row in rows:
+        if (row.get("date") or "").strip() != target:
+            continue
+        found = True
+        for key, value in updates.items():
+            if value is None:
+                continue
+            row[key] = value
+        break
+
+    if not found:
+        new_row = {h: "" for h in headers}
+        for col in CSV_COLUMNS:
+            new_row.setdefault(col, "")
+        new_row["date"] = target
+        for key, value in updates.items():
+            if value is None:
+                continue
+            new_row[key] = value
+        rows.append(new_row)
+
+    def sort_key(row: dict):
+        raw = (row.get("date") or "").strip()
+        try:
+            return (0, datetime.strptime(raw, "%Y-%m-%d").date())
+        except Exception:
+            return (1, raw)
+
+    rows.sort(key=sort_key)
+    _write_csv_dict_rows(path, headers, rows)
+    return found, target
 
 
 def _supervisor_post(path: str) -> Tuple[bool, str]:
@@ -306,6 +380,55 @@ def validate_csv():
     else:
         flash("Validation failed", "error")
     flash(output or "(no output)", "log")
+    return redirect(_ingress_url("index", preview=selected))
+
+
+@app.post("/set-date")
+def set_date():
+    selected = (request.form.get("csv_path") or "").strip()
+    raw_date = (request.form.get("edit_date") or "").strip()
+    if not selected:
+        flash("Select a CSV file first", "error")
+        return redirect(_ingress_url("index"))
+    if not raw_date:
+        flash("Date is required", "error")
+        return redirect(_ingress_url("index", preview=selected))
+
+    try:
+        edit_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Invalid date format (expected YYYY-MM-DD)", "error")
+        return redirect(_ingress_url("index", preview=selected))
+
+    try:
+        path = _resolve_under_workspace(selected)
+    except Exception as exc:
+        flash(f"Invalid file: {exc}", "error")
+        return redirect(_ingress_url("index"))
+
+    if not path.exists():
+        flash("CSV file not found", "error")
+        return redirect(_ingress_url("index"))
+
+    updates = {}
+    try:
+        for key in ("gas_m3", "stroom_t1_kwh", "stroom_t2_kwh", "water_l"):
+            raw = request.form.get(key, "")
+            # Empty input means: do not change existing value.
+            updates[key] = _normalize_decimal(raw) if raw.strip() != "" else None
+        notes_raw = request.form.get("notes", "")
+        updates["notes"] = notes_raw.strip() if notes_raw.strip() != "" else None
+    except ValueError:
+        flash("Numeric field has invalid value", "error")
+        return redirect(_ingress_url("index", preview=selected))
+
+    try:
+        existed, target = _upsert_csv_date(path, edit_date, updates)
+        action = "Updated" if existed else "Inserted"
+        flash(f"{action} row for {target} in {selected}", "success")
+    except Exception as exc:
+        flash(f"Date edit failed: {exc}", "error")
+
     return redirect(_ingress_url("index", preview=selected))
 
 

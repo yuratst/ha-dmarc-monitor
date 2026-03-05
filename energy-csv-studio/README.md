@@ -6,6 +6,7 @@ Visual tool for repairing Home Assistant energy history using CSV.
 
 - Export energy statistics to editable CSV
 - Upload edited CSV
+- Edit/add a single date row directly in UI
 - Validate CSV before import
 - Import into existing statistics IDs (no helper/template rename)
 - Auto backup before every import

@@ -187,6 +187,32 @@
             {% endif %}
           </div>
         </form>
+
+        <h2 style="margin-top:18px;">3) Edit by date</h2>
+        <form method="post" action="{{ ingress_url('set_date') }}">
+          <div class="row">
+            <select name="csv_path" required>
+              <option value="">Select CSV</option>
+              {% for f in csv_files %}
+              <option value="{{ f }}" {% if f==preview_file %}selected{% endif %}>{{ f }}</option>
+              {% endfor %}
+            </select>
+            <input type="date" name="edit_date" required style="background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
+          </div>
+          <div class="row">
+            <input type="text" name="gas_m3" placeholder="gas_m3 (bv 206.0)" style="flex:1;min-width:180px;background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
+            <input type="text" name="stroom_t1_kwh" placeholder="stroom_t1_kwh" style="flex:1;min-width:180px;background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
+            <input type="text" name="stroom_t2_kwh" placeholder="stroom_t2_kwh" style="flex:1;min-width:180px;background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
+          </div>
+          <div class="row">
+            <input type="text" name="water_l" placeholder="water_l (bv 10446)" style="flex:1;min-width:180px;background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
+            <input type="text" name="notes" placeholder="notes (optioneel)" style="flex:2;min-width:220px;background:#0b1732;color:#dbe8ff;border:1px solid #273a62;border-radius:10px;padding:10px;" />
+            <button type="submit" class="secondary">Save date row</button>
+          </div>
+          <div class="row small">
+            Leeg veld = bestaande waarde behouden. Bestaat de datum nog niet, dan wordt een nieuwe rij toegevoegd.
+          </div>
+        </form>
       </div>
 
       <div class="card">
